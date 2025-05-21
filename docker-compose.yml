@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v2.9
+    command:
+      - "--api.insecure=true"
+      - "--log.level=DEBUG"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.ws.address=:8181"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.myresolver.acme.email=fed0ss1337@gmail.com"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8181:8181"
+      - "8080:8080"
+    volumes:
+      - "./letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - chess_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: DOCKERFILE
+    labels:
+      - "traefik.http.routers.backend.rule=Host(`chess.k6z.ru`) && PathPrefix(`/api`)"
+      - "traefik.http.services.backend.loadbalancer.server.port=80"
+      - "traefik.http.routers.backend.entrypoints=websecure"
+      - "traefik.http.routers.backend.tls.certresolver=myresolver"
+    networks:
+      - chess_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: DOCKERFILE
+    labels:
+      - "traefik.http.routers.frontend.rule=Host(`chess.k6z.ru`) && PathPrefix(`/`)"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls.certresolver=myresolver"
+    networks:
+      - chess_network
+
+  websocket:
+    build:
+      context: ./backend
+      dockerfile: DOCKERFILE
+    labels:
+      - "traefik.http.routers.websocket.rule=Host(`chess.k6z.ru`)"
+      - "traefik.http.routers.websocket.entrypoints=ws"
+      - "traefik.http.routers.websocket.tls.certresolver=myresolver"
+      - "traefik.http.services.websocket.loadbalancer.server.port=8181"
+      - "traefik.tcp.routers.websocket.tls=true"
+    networks:
+      - chess_network
+
+networks:
+  chess_network:
+    driver: bridge
